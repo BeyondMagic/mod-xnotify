@@ -40,7 +40,7 @@ struct Config {
 	int shrink;
 	int wrap;
 
-	int sec;
+	float sec;
 	int align_top;
 
 	unsigned int actionbutton;
@@ -80,7 +80,7 @@ struct Itemspec {
 	char *tag;
 	char *cmd;
 	int bar;
-	int sec;
+	float sec;
 };
 
 /* notification item structure */
@@ -93,7 +93,7 @@ struct Item {
 	char *cmd;
 
 	time_t time;
-	int sec;
+	float sec;
 
 	int w, h;
 	int imgw;
