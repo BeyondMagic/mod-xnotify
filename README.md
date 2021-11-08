@@ -8,6 +8,8 @@ XNotify receives a notification specification in stdin and shows a notification 
 
 ---
 
+This is a build with the purpose to be solely used with [this lemonbar script](https://github.com/BeyondMagic/scripts/blob/master/bars/).
+
 See the [manual](https://github.com/phillbush/xnotify/wiki) by phillbush (authour) for more information on how xnotify works.
 
 
