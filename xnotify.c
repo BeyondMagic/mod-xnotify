@@ -1362,6 +1362,7 @@ redraw(void)
 	XrmDestroyDatabase(xdb);
   
   if (reading == 0 && usrflag == 0) {
+  	XCloseDisplay(dpy);
     return redraw();
   }
   return 0;
