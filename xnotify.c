@@ -17,7 +17,7 @@
 #include "xnotify.h"
 
 /* X stuff */
-static Display *dpy;
+Display *dpy;
 static Colormap colormap;
 static Visual *visual;
 static Window root;
@@ -32,11 +32,12 @@ static Atom netatom[NetLast];
 static struct DC dc;
 static struct Fonts titlefnt, bodyfnt;
 static struct Ellipsis ellipsis;
+static int redraw(void);
 
 /* flags */
 static int oflag;       /* whether only one notification must exist at a time */
 static int wflag;       /* whether to let window manager manage notifications */
-volatile sig_atomic_t usrflag;  /* 1 if for SIGUSR1, 2 for SIGUSR2, 0 otherwise */
+volatile sig_atomic_t usrflag;  /* 1 if for SIGUSR1, 2 for SIGUSR2, 3 for XResources reload, 0 otherwise */
 
 /* include configuration structure */
 #include "config.h"
@@ -347,39 +348,40 @@ parsefonts(struct Fonts *fnt, const char *s)
 	fnt->texth = fnt->fonts[0]->height;
 }
 
-/* signal SIGUSR1 handler (close all notifications) */
+/* Handle remote signals */
 static void
-sigusr1handler(int sig)
+sighandler(int sig)
 {
-	(void)sig;
-	usrflag = 1;
-}
+  switch (sig) {
 
-/* signal SIGUSR2 handler (print cmd of first notification) */
-static void
-sigusr2handler(int sig)
-{
-	(void)sig;
-	usrflag = 2;
+    /* signal SIGUSR1 handler (close all notifications) */
+    case SIGUSR1:
+      usrflag = 1;
+    break;
+    /* signal SIGUSR2 handler (print cmd of first notification) */
+    case SIGUSR2:
+      usrflag = 2;
+    break;
+    /* signal SIGURG handler (reload xresources) */
+    case SIGURG:
+      usrflag = 3;
+    break;
+    /* anthing else */
+    default:
+      usrflag = 0;
+
+  }
 }
 
 /* init signal  */
 static void
 initsignal(void)
 {
-	struct sigaction sa;
 
-	sa.sa_handler = sigusr1handler;
-	sa.sa_flags = 0;
-	sigemptyset(&sa.sa_mask);
-	if (sigaction(SIGUSR1, &sa, NULL) == -1)
-		err(1, "sigaction");
+  signal(SIGUSR1, sighandler);
+  signal(SIGUSR2, sighandler);
+  signal(SIGURG,  sighandler);
 
-	sa.sa_handler = sigusr2handler;
-	sa.sa_flags = 0;
-	sigemptyset(&sa.sa_mask);
-	if (sigaction(SIGUSR2, &sa, NULL) == -1)
-		err(1, "sigaction");
 }
 
 /* query monitor information */
@@ -983,8 +985,10 @@ delitem(struct Queue *queue, struct Item *item)
 static void
 cmditem(struct Item *item)
 {
-	printf("%s\n", item->cmd);
-	fflush(stdout);
+  if (item->cmd) {
+  	printf("%s\n", item->cmd);
+  	fflush(stdout);
+  }
 }
 
 /* check the type of option given to a notification item */
@@ -1244,10 +1248,10 @@ initellipsis(void)
 	ellipsis.width = ext.xOff;
 }
 
-/* xnotify: show notifications from stdin */
-int
-main(int argc, char *argv[])
+static int
+redraw(void)
 {
+  
 	struct Itemspec *itemspec;
 	struct Queue *queue;    /* it contains the queue of notifications and their geometry */
 	struct pollfd pfd[2];   /* [2] for stdin and xfd, see poll(2) */
@@ -1255,34 +1259,36 @@ main(int argc, char *argv[])
 	int timeout = -1;       /* maximum interval for poll(2) to complete */
 	int flags;              /* status flags for stdin */
 	int reading = 1;        /* set to 0 when stdin reaches EOF */
-
+  
 	/* open connection to server and set X variables */
 	if ((dpy = XOpenDisplay(NULL)) == NULL)
 		errx(1, "could not open display");
+  
 	screen = DefaultScreen(dpy);
 	root = RootWindow(dpy, screen);
 	visual = DefaultVisual(dpy, screen);
 	depth = DefaultDepth(dpy, screen);
 	colormap = DefaultColormap(dpy, screen);
 	xfd = XConnectionNumber(dpy);
-	XrmInitialize();
-	if ((xrm = XResourceManagerString(dpy)) != NULL)
-		xdb = XrmGetStringDatabase(xrm);
-
-	/* get configuration */
-	getresources();
-	getoptions(argc, argv);
-
+  
 	/* imlib2 stuff */
 	imlib_set_cache_size(2048 * 1024);
 	imlib_context_set_dither(1);
 	imlib_context_set_display(dpy);
 	imlib_context_set_visual(visual);
 	imlib_context_set_colormap(colormap);
+  
+	XrmInitialize();
+  xrm = XResourceManagerString(dpy);
+	xdb = XrmGetStringDatabase(xrm);
+ 
+  (void)fprintf(stderr, "bitch\n");
+	/* get configuration */
+	getresources();
 
+	initmonitor();
 	/* init stuff */
 	initsignal();
-	initmonitor();
 	initdc();
 	initatoms();
 	initstructurenotify();
@@ -1327,10 +1333,20 @@ main(int argc, char *argv[])
 			}
 		}
 		if (usrflag) {
-			if (usrflag > 1 && queue->head)
-				cmditem(queue->head);
-			cleanitems(queue, NULL);
-			usrflag = 0;
+      if (usrflag == 1 && queue->head) {
+        cleanitems(queue, NULL);
+  			usrflag = 0;
+      }
+      // It's not working (don't blame )
+			else if (usrflag == 2 && queue->head) {
+        cmditem(queue->head);
+  			usrflag = 0;
+      }
+      else if (usrflag == 3) {
+        reading = 0;
+        usrflag = 0;
+        queue->head = 0;
+      }
 		}
 		timeitems(queue);
 		if (queue->change)
@@ -1338,14 +1354,32 @@ main(int argc, char *argv[])
 		timeout = (queue->head) ? 1000 : -1;
 		XFlush(dpy);
 	} while (reading || queue->head);
-
+  
 	/* clean up stuff */
 	cleanitems(queue, NULL);
 	cleandc();
 	free(queue);
+	XrmDestroyDatabase(xdb);
+  
+  if (reading == 0 && usrflag == 0) {
+    return redraw();
+  }
+  return 0;
+
+}
+
+/* xnotify: show notifications from stdin */
+int
+main(int argc, char *argv[])
+{
+  
+  getoptions(argc, argv);
+  
+  initsignal();
+
+  redraw();
 
 	/* close connection to server */
-	XrmDestroyDatabase(xdb);
 	XCloseDisplay(dpy);
 
 	return 0;
