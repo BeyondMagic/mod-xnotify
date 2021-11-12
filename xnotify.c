@@ -1279,10 +1279,9 @@ redraw(void)
 	imlib_context_set_colormap(colormap);
   
 	XrmInitialize();
-  xrm = XResourceManagerString(dpy);
-	xdb = XrmGetStringDatabase(xrm);
- 
-  (void)fprintf(stderr, "bitch\n");
+	if ((xrm = XResourceManagerString(dpy)) != NULL)
+		xdb = XrmGetStringDatabase(xrm);
+
 	/* get configuration */
 	getresources();
 
