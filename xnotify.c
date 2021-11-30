@@ -1302,6 +1302,9 @@ redraw(void)
 	if (fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK) == -1)
 		err(1, "could not set status flags for stdin");
 
+	/* disable buffering https://github.com/phillbush/xnotify/commit/a8bfb519d1b6805efabef19976baa2977ae34f22 */
+	setbuf(stdin, NULL);
+
 	/* prepare the structure for poll(2) */
 	pfd[0].fd = STDIN_FILENO;
 	pfd[1].fd = xfd;
